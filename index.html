@@ -258,22 +258,70 @@
         resize: none;
         overflow: hidden;
         padding: 0;
+        margin: 0;
+        display: block;
+        -webkit-appearance: none;
+        appearance: none;
+    }
+
+    .item-note-wrap {
+        position: relative;
+        margin-top: 2px;
     }
 
     .item-note-input {
+        display: block;
+        width: 100%;
         font-size: 11px;
         font-style: italic;
         color: var(--text-2);
-        margin-top: -2px;
-        line-height: 1.2;
+        line-height: 1.3;
         background: transparent;
         border: none;
         outline: none;
         font-family: 'DM Sans', sans-serif;
-        width: 100%;
         resize: none;
         overflow: hidden;
         padding: 0;
+        margin: 0;
+        -webkit-appearance: none;
+        appearance: none;
+        color: transparent;
+    }
+
+    .item-note-display {
+        position: absolute;
+        inset: 0;
+        font-size: 11px;
+        font-style: italic;
+        color: var(--text-2);
+        line-height: 1.3;
+        word-break: break-word;
+        cursor: text;
+        pointer-events: auto;
+        background: transparent;
+    }
+
+    .item-note-display a {
+        color: var(--accent);
+        text-decoration: none;
+    }
+
+    .item-note-display a:active {
+        text-decoration: underline;
+    }
+
+    .item-note-wrap.editing .item-note-display {
+        pointer-events: none;
+        opacity: 0;
+    }
+
+    .item-note-wrap.editing .item-note-input {
+        color: var(--text-2);
+    }
+
+    .item-title-input {
+        display: block;
     }
 
     .item-note-add {
@@ -680,13 +728,18 @@
           oninput="autoResize(this)"
           onkeydown="if(event.key==='Enter'&&!event.shiftKey)this.blur()">${
             esc(item.title)}</textarea>
-        ${item.note ? `<textarea class="item-note-input" rows="1"
-               onblur="saveItem('${listId}','${item.id}','note',this.value)"
-               oninput="autoResize(this)"
-               onkeydown="if(event.key==='Enter'&&!event.shiftKey)this.blur()"
-             >${
+        ${item.note ? `<div class="item-note-wrap" id="note-wrap-${item.id}">
+               <div class="item-note-display" onclick="editNoteInline('${item.id}')">${linkify(item.note)}</div>
+               <textarea class="item-note-input"
+                 onblur="saveNoteInline(this,'${
+            listId}','${item.id}')"
+                 oninput="autoResize(this)"
+                 onkeydown="if(event.key==='Enter'&&!event.shiftKey)this.blur()"
+               >${
 
-            esc(item.note)}</textarea>` : `<button class="item-note-add" onclick="addNoteInline('${listId}','${item.id}',this)">+ note</button>`
+            esc(item.note)}</textarea>
+             </div>`
+            : `<button class="item-note-add" onclick="addNoteInline('${listId}','${item.id}',this)">+ note</button>`
             }
       </div>
       <button class="item-del" onclick="removeItem('${
@@ -701,7 +754,7 @@
         updateSubtitle();
         reattachItemHandles(card, listId);
         // Auto-resize all textareas now that they're in the DOM
-        card.querySelectorAll('textarea').forEach(ta => {
+        card.querySelectorAll('.item-note-input, .item-title-input').forEach(ta => {
             ta.style.height = 'auto';
             ta.style.height = ta.scrollHeight + 'px';
         });
@@ -1158,23 +1211,54 @@
     window.saveItem = async function(listId, itemId, field, value) {
         const trimmed = value.trim();
         if (field === 'title' && !trimmed)
-            return; // don't save empty title
+            return;
         await updateDoc(doc(db, 'lists', listId, 'items', itemId), {
             [field]: trimmed
+        });
+    };
+
+    window.editNoteInline = function(itemId) {
+        const wrap = document.getElementById('note-wrap-' + itemId);
+        if (!wrap)
+            return;
+        const ta = wrap.querySelector('.item-note-input');
+        if (!ta)
+            return;
+        wrap.classList.add('editing');
+        const len = ta.value.length;
+        ta.setSelectionRange(len, len);
+        ta.focus();
+    };
+
+    window.saveNoteInline = async function(ta, listId, itemId) {
+        const trimmed = ta.value.trim();
+        const wrap = ta.closest('.item-note-wrap');
+        if (wrap)
+            wrap.classList.remove('editing');
+        await updateDoc(doc(db, 'lists', listId, 'items', itemId), {
+            note: trimmed
         });
     };
 
     window.addNoteInline = function(listId, itemId, btn) {
         const body = btn.parentElement;
         btn.remove();
+        // Build a wrap with display+textarea so it matches the saved state structure
+        const wrap = document.createElement('div');
+        wrap.className = 'item-note-wrap editing';
+        wrap.id = 'note-wrap-' + itemId;
+        const display = document.createElement('div');
+        display.className = 'item-note-display';
+        display.setAttribute('onclick', `editNoteInline('${itemId}')`);
         const ta = document.createElement('textarea');
         ta.className = 'item-note-input';
-        ta.rows = 1;
         ta.placeholder = 'note or URL…';
         ta.setAttribute('onblur', `saveItem('${listId}','${itemId}','note',this.value)`);
         ta.setAttribute('oninput', 'autoResize(this)');
         ta.setAttribute('onkeydown', "if(event.key==='Enter'&&!event.shiftKey)this.blur()");
-        body.appendChild(ta);
+        wrap.appendChild(display);
+        wrap.appendChild(ta);
+        body.appendChild(wrap);
         ta.focus();
     };
 
